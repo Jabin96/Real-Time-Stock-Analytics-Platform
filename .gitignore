@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+.DS_Store
+.env
+outputs/streaming_data/
+outputs/anomalies/
+outputs/checkpoints/
+*.log
+.idea/
+.vscode/
