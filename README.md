@@ -1,115 +1,116 @@
-# The Data Alchemists - Real-Time Stock Analytics Platform
+# Real-Time Stock Analytics Platform
+### by The Data Alchemist
 
 ## Overview
-**The Data Alchemists** built a robust, real-time data engineering pipeline designed to ingest, process, and visualize stock market data with low latency. Built using industry-standard technologies, it simulates a production-grade streaming architecture capable of handling high-velocity financial data.
+**The Data Alchemist** team built a robust, real-time data engineering pipeline designed to ingest, process, and visualize stock market data with low latency. Leveraging industry-standard technologies like Apache Kafka and Apache Spark, it simulates a production-grade streaming architecture capable of handling high-velocity financial data.
 
 ## Architecture
-The pipeline follows a modern streaming architecture:
+The pipeline follows a modern decoupled streaming architecture:
 
-1.  **Ingestion Layer (Kafka)**:
-    *   **Producer**: Simulates real-time stock ticks by streaming data from a CSV dataset or generating synthetic events.
-    *   **Broker**: Apache Kafka acts as the central message bus, ensuring durable and decoupled data transport.
+1.  **Ingestion Layer (Apache Kafka)**:
+    *   **Producer**: Simulates real-time stock ticks by streaming data from a dataset. Scalable to multiple instances.
+    *   **Broker**: Apache Kafka acts as the central message bus, ensuring durable and reliable data transport.
 
 2.  **Processing Layer (Apache Spark)**:
     *   **Consumer**: A PySpark Structured Streaming application that consumes data from Kafka.
-    *   **Analytics**: Performs real-time transformations, calculates 5-minute moving averages, and detects price anomalies using Z-Score statistical analysis.
+    *   **Analytics**: Performs real-time transformations and detects price anomalies using threshold-based logic (simulating Z-Score analysis).
 
 3.  **Visualization Layer (Streamlit)**:
-    *   **Dashboard**: A professional, flicker-free UI that displays real-time metrics, price trends, and detected anomalies.
-    *   **Features**: Interactive Plotly charts, dynamic watchlists, and auto-refresh capabilities.
+    *   **Dashboard**: A professional, real-time UI that displays metrics, price trends, and alerts.
+    *   **Features**: Interactive Plotly charts (Dark Mode), dynamic watchlists, and auto-refresh capabilities.
 
 ## Prerequisites
-Ensure you have the following installed:
-*   **Docker & Docker Compose**: For running Kafka and Zookeeper.
-*   **Python 3.8+**: For running the scripts.
-*   **Java 11 (OpenJDK)**: Required for PySpark.
+Ensure the following are installed on your system:
+*   **Docker & Docker Compose**: For running the Kafka and Zookeeper infrastructure.
+*   **Python 3.8+**: For running the producer and dashboard scripts.
+*   **Java 11 (OpenJDK)**: Required for PySpark execution.
 
-## Installation
+## Installation & Setup
 
-1.  **Clone the Repository**
-    ```bash
-    git clone <repository-url>
-    cd Data_Eng_Project
-    ```
-
-2.  **Set Up Virtual Environment**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
-    ```
-
-3.  **Install Dependencies**
-    ```bash
-    pip install -r requirements.txt
-    ```
-    *(Note: Ensure `pyspark`, `kafka-python`, `streamlit`, `plotly`, `pandas` are installed)*
-
-## Usage Guide
-
-### 1. Start Infrastructure
-Launch the Kafka and Zookeeper containers:
+### 1. Clone the Repository
 ```bash
-docker-compose up -d
+git clone <repository-url>
+cd Data_Eng_Project
 ```
 
-### 2. Start the Data Producer
-Stream stock data to the Kafka topic:
+### 2. Set Up Virtual Environment
+Create and activate a Python virtual environment to manage dependencies:
 ```bash
-python producer.py
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
-*   *Alternative*: Use `python dummy_producer.py` for synthetic random data.
 
-### 3. Start the Analytics Engine
-Run the Spark consumer to process the stream:
+### 3. Install Dependencies
+Install the required Python libraries:
 ```bash
+pip install -r requirements.txt
+```
+*Key libraries: `pyspark`, `kafka-python`, `streamlit`, `plotly`, `pandas`.*
+
+## Usage Guide (End-to-End Flow)
+
+Follow these steps to run the entire platform locally.
+
+### Step 1: Start Infrastructure & Producers
+Launch the Kafka broker, Zookeeper, and the scalable Producer service using Docker Compose.
+
+```bash
+docker compose up -d --build --scale producer=3
+```
+
+*   **What happens**:
+    *   Kafka and Zookeeper containers start.
+    *   3 instances of the `producer` service start, streaming stock data to the `test_topic` topic.
+    *   **Anomaly Injection**: By default, producers inject a fake anomaly (5x price spike) every 30 minutes.
+
+### Step 2: Start the Analytics Engine
+Run the Spark consumer to process the stream. This script reads from Kafka and writes processed data to the file system.
+
+```bash
+# Ensure you are in the virtual environment
+source venv/bin/activate
+
+# Set environment variables (if not already set globally)
+export JAVA_HOME=/opt/homebrew/opt/openjdk@11  # Adjust path to your Java 11 installation
+export SPARK_LOCAL_IP=127.0.0.1
+
+# Run the consumer
 python consumer.py
 ```
-*   This script writes processed data to `./outputs/streaming_data` and anomalies to `./outputs/anomalies`.
 
-### 4. Launch the Dashboard
-Open the real-time visualization interface:
+*   **Output**:
+    *   Processed data is written to `./outputs/streaming_data/raw_ticks`.
+    *   Detected anomalies are written to `./outputs/anomalies`.
+
+### Step 3: Launch the Dashboard
+Open the real-time visualization interface to monitor the data.
+
 ```bash
 streamlit run dashboard.py
 ```
-*   Access the dashboard at `http://localhost:8501`.
 
-## Project Structure
-
-| File | Description |
-|------|-------------|
-| `producer.py` | Reads stock data from CSV and streams it to Kafka, simulating real-time events. |
-| `consumer.py` | PySpark application that consumes Kafka streams, calculates moving averages, and detects anomalies. |
-| `dashboard.py` | Streamlit application for visualizing real-time data, trends, and alerts. |
-| `dummy_producer.py` | Generates random stock data for testing purposes. |
-| `docker-compose.yml` | Configuration for deploying Kafka and Zookeeper services. |
-| `data/` | Contains the source dataset (`stock_data.csv`). |
-| `outputs/` | Directory where processed data and anomalies are stored. |
+*   **Access**: Open your browser to `http://localhost:8501`.
+*   **Features**:
+    *   **Dashboard Tab**: View real-time metrics, a watchlist, and price trend charts.
+    *   **Anomalies Tab**: View a historical list of detected anomalies.
+    *   **Analytics Tab**: View detailed statistics.
 
 ## Configuration
-*   **Kafka Port**: Default is `9093` (configured in `docker-compose.yml` and scripts).
-*   **Topic Name**: `test_topic`.
-*   **Dashboard Refresh**: Default is 2 seconds (toggleable in UI).
-*   **Topic Name**: `test_topic`.
 
-## Scaling & Cloud Deployment
+### Producer Configuration (`producer.py`)
+*   `SPEED`: Controls the speed of data emission (default: 0.2s).
+*   `ANOMALY_EVERY_SEC`: Frequency of fake anomalies (default: 1800s / 30 mins).
+*   `ENABLE_FAKE_ANOMALIES`: Toggle to enable/disable anomaly injection.
 
-This project is designed to be cloud-agnostic. Here is how to scale it for production:
+### Dashboard Configuration (`dashboard.py`)
+*   **Refresh Rate**: The dashboard auto-refreshes every 1 second (when enabled).
+*   **Time Window**: Adjustable via the sidebar (default: 3 minutes).
 
-### 1. Scaling Kafka
-*   **Increase Throughput**: Add more brokers to the Kafka cluster in `docker-compose.yml`.
-*   **Parallel Processing**: Increase the number of partitions for `test_topic`. This allows multiple Spark consumers to read from the same topic simultaneously.
+## Troubleshooting
 
-### 2. Scaling Spark
-*   **Distributed Processing**: Submit the `consumer.py` job to a cluster manager like **YARN** or **Kubernetes**.
-    *   Command: `spark-submit --master yarn --deploy-mode cluster consumer.py`
-*   **Resource Allocation**: Tune `spark.executor.cores` and `spark.executor.memory` to handle larger workloads.
-
-### 3. Cloud Storage (S3/HDFS)
-*   To switch from local storage to cloud storage, update the `OUTPUT_DIR` in `consumer.py`:
-    ```python
-    # AWS S3 Example
-    OUTPUT_DIR = "s3a://my-bucket/stock-data"
-    ```
+*   **Kafka Connection Issues**: Ensure Docker containers are running (`docker ps`). If running locally on Mac, ensure `KAFKA_ADVERTISED_LISTENERS` in `docker-compose.yml` points to `127.0.0.1`.
+*   **Java Errors**: PySpark requires Java 8 or 11. Ensure `JAVA_HOME` is correctly set.
+*   **Missing Data**: Check if the `producer` containers are running and if `consumer.py` is successfully writing to the `outputs/` directory.
 
 ---
-*Built by The Data Alchemists Engineering Team*
+*Built by The Data Alchemist Engineering Team*

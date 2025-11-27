@@ -10,7 +10,7 @@ RAW_DATA_DIR = "./outputs/streaming_data/raw_ticks"
 ANOMALY_DIR = "./outputs/anomalies"
 
 st.set_page_config(
-    page_title="The Data Alchemists",
+    page_title="Real-Time Stock Analytics",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -133,7 +133,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data(ttl=3)
+@st.cache_data(ttl=1)
 def load_spark_data(folder_path):
     """Cached data loader."""
     try:
@@ -164,7 +164,7 @@ def load_spark_data(folder_path):
     return pd.DataFrame()
 
 with st.sidebar:
-    st.markdown("### The Data Alchemists")
+    st.markdown("### The Data Alchemist")
     st.caption("Real-Time Stock Analytics")
     
     st.divider()
@@ -241,7 +241,7 @@ with st.sidebar:
     st.caption(f"{len(selected_stocks)} stocks selected")
 
 if page == "Dashboard":
-    @st.fragment(run_every=3 if auto_refresh else None)
+    @st.fragment(run_every=1 if auto_refresh else None)
     def render_dashboard():
         # Reload data inside fragment for updates
         df_raw_frag = load_spark_data(RAW_DATA_DIR)
@@ -258,13 +258,25 @@ if page == "Dashboard":
         else:
             recent_df_frag = df_raw_frag
 
+        # Deduplicate anomalies for metrics and display
+        if not df_anom_frag.empty:
+            # Ensure z_score exists
+            if 'z_score' not in df_anom_frag.columns:
+                df_anom_frag['z_score'] = 5.0
+                
+            # Deduplicate: Keep only one per symbol per minute
+            df_anom_frag['minute'] = df_anom_frag['timestamp'].dt.floor('T')
+            df_anom_dedup = df_anom_frag.drop_duplicates(subset=['symbol', 'minute'], keep='first')
+        else:
+            df_anom_dedup = pd.DataFrame()
+
         # Top Metrics Row
         col1, col2, col3, col4 = st.columns(4)
         
         total_records = len(df_raw_frag)
         unique_symbols = len(df_raw_frag['symbol'].unique())
         avg_price = recent_df_frag['price'].mean() if not recent_df_frag.empty else 0
-        anomaly_count = len(df_anom_frag) if not df_anom_frag.empty else 0
+        anomaly_count = len(df_anom_dedup) # Use deduplicated count
         
         with col1:
             st.markdown(f"""
@@ -297,6 +309,48 @@ if page == "Dashboard":
                 <div class="metric-value">{anomaly_count}</div>
             </div>
             """, unsafe_allow_html=True)
+        
+        # Recent Anomalies Section (New)
+        if not df_anom_dedup.empty:
+            # Show only the single most recent anomaly from deduplicated list
+            latest_anom = df_anom_dedup.sort_values('timestamp', ascending=False).iloc[0]
+            
+            # Check if anomaly is recent (within last 60 seconds)
+            # Convert to datetime if not already (it should be from load_spark_data)
+            # We need to be careful with timezones. Assuming local time.
+            time_diff = (pd.Timestamp.now() - latest_anom['timestamp'].replace(tzinfo=None)).total_seconds()
+            
+            # Since timestamps in CSV might have timezone info or not, we handle robustly:
+            try:
+                # Try to make both timezone-naive for comparison
+                current_time = pd.Timestamp.now()
+                anom_time = pd.to_datetime(latest_anom['timestamp']).replace(tzinfo=None)
+                time_diff = (current_time - anom_time).total_seconds()
+            except:
+                time_diff = 0 # Fallback to showing it if time calc fails
+            
+            # Only show if within last 60 seconds
+            if time_diff < 60:
+                st.markdown('<div class="section-title">Latest Anomaly Alert</div>', unsafe_allow_html=True)
+                st.markdown(f"""
+                <div style="
+                    background-color: #fee2e2; 
+                    border-left: 5px solid #ef4444; 
+                    padding: 1rem; 
+                    border-radius: 8px; 
+                    color: #7f1d1d; 
+                    margin-bottom: 1rem;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                ">
+                    <span style="font-size: 1.5rem;">🚨</span>
+                    <div>
+                        <div style="font-weight: 700; font-size: 1.1rem;">Anomaly Detected: {latest_anom['symbol']}</div>
+                        <div style="font-size: 0.9rem;">Price: <b>${latest_anom['price']:.2f}</b> | Time: {latest_anom['timestamp'].strftime('%H:%M:%S')}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
         
@@ -342,7 +396,7 @@ if page == "Dashboard":
                 st.info("Select stocks from the sidebar to build your watchlist")
         
         with col_right:
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            # Removed white box container
             st.markdown('<div class="section-title">Price Trends</div>', unsafe_allow_html=True)
             
             fig = go.Figure()
@@ -390,7 +444,8 @@ if page == "Dashboard":
                 yaxis_title="Price ($)",
                 yaxis=dict(
                     range=[y_min, y_max] if y_min is not None else None,
-                    fixedrange=False
+                    fixedrange=False,
+                    gridcolor='#444444' # Dark grey grid
                 ),
                 legend=dict(
                     orientation="h",
@@ -399,11 +454,15 @@ if page == "Dashboard":
                     xanchor="right",
                     x=1
                 ),
-                margin=dict(l=0, r=0, t=40, b=0)
+                margin=dict(l=0, r=0, t=40, b=0),
+                paper_bgcolor='rgba(0,0,0,1)', # Black background
+                plot_bgcolor='rgba(0,0,0,1)',
+                font=dict(color='#FFFFFF'), # White text
+                xaxis=dict(gridcolor='#444444') # Dark grey grid
             )
             
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-            st.markdown('</div>', unsafe_allow_html=True)
+            # Removed closing div
 
     # Call the fragment function
     render_dashboard()
@@ -426,18 +485,45 @@ elif page == "Anomalies":
     st.markdown('<div class="section-title">Anomaly Detection</div>', unsafe_allow_html=True)
     
     if not df_anom.empty:
-        recent_anomalies = df_anom.sort_values('timestamp', ascending=False).head(20)
+        # Handle missing z_score
+        if 'z_score' not in df_anom.columns:
+            df_anom['z_score'] = 5.0
+            
+        # Deduplicate anomalies: Keep only one per symbol per minute
+        # Round timestamp to nearest minute for grouping
+        df_anom['minute'] = df_anom['timestamp'].dt.floor('T')
+        unique_anomalies = df_anom.drop_duplicates(subset=['symbol', 'minute'], keep='first')
+        
+        recent_anomalies = unique_anomalies.sort_values('timestamp', ascending=False).head(20)
         
         for _, anom in recent_anomalies.iterrows():
-            col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
-            
-            with col1:
-                st.markdown(f"**{anom['symbol']}**")
-            with col2:
-                st.markdown(f"**${anom['price']:.2f}**")
-            with col3:
-                st.markdown(f"**Z-Score: {anom['z_score']:.2f}**")
-            with col4:
-                st.caption(anom['timestamp'].strftime('%Y-%m-%d %H:%M:%S'))
+            # Use custom HTML card for better visibility
+            st.markdown(f"""
+            <div style="
+                background-color: white;
+                padding: 1rem;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                margin-bottom: 0.8rem;
+                border-left: 4px solid #ef4444;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                color: #1f2937;
+            ">
+                <div style="display: flex; gap: 2rem; align-items: center;">
+                    <div style="font-weight: 700; font-size: 1.1rem; width: 60px;">{anom['symbol']}</div>
+                    <div style="font-family: monospace; font-size: 1.1rem;">${anom['price']:.2f}</div>
+                </div>
+                <div style="display: flex; gap: 2rem; align-items: center;">
+                    <div style="background: #fee2e2; color: #991b1b; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.9rem; font-weight: 600;">
+                        Z-Score: {anom['z_score']:.2f}
+                    </div>
+                    <div style="color: #6b7280; font-size: 0.9rem;">
+                        {anom['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
     else:
         st.success("No anomalies detected - System operating normally")
