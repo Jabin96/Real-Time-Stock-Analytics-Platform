@@ -3,11 +3,10 @@ import json
 import random
 from kafka import KafkaProducer
 
-# Configuration
 KAFKA_PORT = '9093'
 TOPIC_NAME = 'test_topic'
 
-print(f"Connecting to Kafka on localhost:{KAFKA_PORT}...")
+print(f"Connecting to Kafka on localhost:{KAFKA_PORT}")
 
 try:
     producer = KafkaProducer(
@@ -15,15 +14,14 @@ try:
         value_serializer=lambda x: json.dumps(x).encode('utf-8'),
         api_version=(0, 10, 1)
     )
-    print("Connected to Kafka.")
+    print("Connected to Kafka")
 except Exception as e:
     print(f"Connection Failed: {e}")
     exit()
 
-print(f"Sending data to topic: '{TOPIC_NAME}' (Press Ctrl+C to stop)")
+print(f"Sending data to topic: '{TOPIC_NAME}'")
 
 while True:
-    # Simulate a simple stock tick
     data = {
         'symbol': random.choice(['AAPL', 'GOOGL', 'MSFT']),
         'price': round(random.uniform(100, 200), 2),
@@ -32,4 +30,4 @@ while True:
     
     producer.send(TOPIC_NAME, value=data)
     print(f"Sent: {data}")
-    time.sleep(1) # Send 1 message per second
+    time.sleep(1)

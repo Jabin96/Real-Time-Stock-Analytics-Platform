@@ -8,3 +8,4 @@ outputs/checkpoints/
 *.log
 .idea/
 .vscode/
+data/stock_data.csv

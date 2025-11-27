@@ -6,19 +6,15 @@ import time
 import plotly.graph_objects as go
 from datetime import datetime
 
-# Configuration
 RAW_DATA_DIR = "./outputs/streaming_data/raw_ticks"
 ANOMALY_DIR = "./outputs/anomalies"
 
-# Page Config
 st.set_page_config(
     page_title="The Data Alchemists",
-    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Dashboard CSS Styling
 st.markdown("""
 <style>
     /* Global Light Theme */
@@ -137,9 +133,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Helper Functions
-
-@st.cache_data(ttl=2)
+@st.cache_data(ttl=3)
 def load_spark_data(folder_path):
     """Cached data loader."""
     try:
@@ -169,16 +163,15 @@ def load_spark_data(folder_path):
         pass
     return pd.DataFrame()
 
-# Sidebar Navigation
 with st.sidebar:
-    st.markdown("### 🧪 The Data Alchemists")
+    st.markdown("### The Data Alchemists")
     st.caption("Real-Time Stock Analytics")
     
     st.divider()
     
     # Navigation
     st.markdown("#### Navigation")
-    page = st.radio("", ["📈 Dashboard", "📊 Analytics", "🚨 Anomalies"], label_visibility="collapsed")
+    page = st.radio("", ["Dashboard", "Analytics", "Anomalies"], label_visibility="collapsed")
     
     st.divider()
     
@@ -194,14 +187,13 @@ with st.sidebar:
     auto_refresh = st.toggle("Auto-refresh", value=False)  # Disabled by default to prevent flickering
     
     if not auto_refresh:
-        refresh_button = st.button("🔄 Refresh Data", use_container_width=True)
+        refresh_button = st.button("Refresh Data", use_container_width=True)
 
-# Data Loading
 df_raw = load_spark_data(RAW_DATA_DIR)
 df_anom = load_spark_data(ANOMALY_DIR)
 
 if df_raw.empty:
-    st.info("🔄 Waiting for data stream...")
+    st.info("Waiting for data stream...")
     st.stop()
 
 # Filter recent data
@@ -221,12 +213,18 @@ with st.sidebar:
     
     # Initialize session state for selected stocks
     if 'selected_stocks' not in st.session_state:
-        st.session_state.selected_stocks = available_symbols[:8] if len(available_symbols) >= 8 else available_symbols
+        default_stocks = ['EA', 'ETR', 'HOLX', 'IFF', 'K']
+        # Only use defaults that are actually available in the data
+        valid_defaults = [s for s in default_stocks if s in available_symbols]
+        st.session_state.selected_stocks = valid_defaults if valid_defaults else (available_symbols[:5] if len(available_symbols) >= 5 else available_symbols)
     
     # Filter session state to only include stocks that exist in current data
     valid_selected = [s for s in st.session_state.selected_stocks if s in available_symbols]
     if not valid_selected and available_symbols:
-        valid_selected = available_symbols[:8] if len(available_symbols) >= 8 else available_symbols
+        # Fallback if selection becomes invalid
+        default_stocks = ['EA', 'ETR', 'HOLX', 'IFF', 'K']
+        valid_defaults = [s for s in default_stocks if s in available_symbols]
+        valid_selected = valid_defaults if valid_defaults else (available_symbols[:5] if len(available_symbols) >= 5 else available_symbols)
     
     selected_stocks = st.multiselect(
         "Select stocks to monitor",
@@ -242,16 +240,15 @@ with st.sidebar:
     
     st.caption(f"{len(selected_stocks)} stocks selected")
 
-# Dashboard Page
-if page == "📈 Dashboard":
-    @st.fragment(run_every=2 if auto_refresh else None)
+if page == "Dashboard":
+    @st.fragment(run_every=3 if auto_refresh else None)
     def render_dashboard():
         # Reload data inside fragment for updates
         df_raw_frag = load_spark_data(RAW_DATA_DIR)
         df_anom_frag = load_spark_data(ANOMALY_DIR)
         
         if df_raw_frag.empty:
-            st.info("🔄 Waiting for data stream...")
+            st.info("Waiting for data stream...")
             return
 
         # Filter recent data
@@ -307,7 +304,7 @@ if page == "📈 Dashboard":
         col_left, col_right = st.columns([1, 2])
         
         with col_left:
-            st.markdown('<div class="section-title">📊 Watchlist</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Watchlist</div>', unsafe_allow_html=True)
             
             if selected_stocks:
                 watchlist_df = recent_df_frag[recent_df_frag['symbol'].isin(selected_stocks)]
@@ -342,11 +339,11 @@ if page == "📈 Dashboard":
                     </div>
                     """, unsafe_allow_html=True)
             else:
-                st.info("👆 Select stocks from the sidebar to build your watchlist")
+                st.info("Select stocks from the sidebar to build your watchlist")
         
         with col_right:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.markdown('<div class="section-title">📈 Price Trends</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Price Trends</div>', unsafe_allow_html=True)
             
             fig = go.Figure()
             
@@ -411,9 +408,8 @@ if page == "📈 Dashboard":
     # Call the fragment function
     render_dashboard()
 
-# Analytics Page
-elif page == "📊 Analytics":
-    st.markdown('<div class="section-title">📊 Detailed Analytics</div>', unsafe_allow_html=True)
+elif page == "Analytics":
+    st.markdown('<div class="section-title">Detailed Analytics</div>', unsafe_allow_html=True)
     
     stats_df = recent_df.groupby('symbol')['price'].agg([
         ('Latest', 'last'),
@@ -426,9 +422,8 @@ elif page == "📊 Analytics":
     
     st.dataframe(stats_df, use_container_width=True, height=600)
 
-# Anomalies Page
-elif page == "🚨 Anomalies":
-    st.markdown('<div class="section-title">🚨 Anomaly Detection</div>', unsafe_allow_html=True)
+elif page == "Anomalies":
+    st.markdown('<div class="section-title">Anomaly Detection</div>', unsafe_allow_html=True)
     
     if not df_anom.empty:
         recent_anomalies = df_anom.sort_values('timestamp', ascending=False).head(20)
@@ -441,8 +436,8 @@ elif page == "🚨 Anomalies":
             with col2:
                 st.markdown(f"**${anom['price']:.2f}**")
             with col3:
-                st.markdown(f"⚠️ **Z-Score: {anom['z_score']:.2f}**")
+                st.markdown(f"**Z-Score: {anom['z_score']:.2f}**")
             with col4:
                 st.caption(anom['timestamp'].strftime('%Y-%m-%d %H:%M:%S'))
     else:
-        st.success("✅ No anomalies detected - System operating normally")
+        st.success("No anomalies detected - System operating normally")
