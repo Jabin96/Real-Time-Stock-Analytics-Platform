@@ -9,3 +9,4 @@ outputs/checkpoints/
 .idea/
 .vscode/
 data/stock_data.csv
+PROJECT_WORKFLOW.md
