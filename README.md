@@ -23,7 +23,7 @@ The pipeline follows a modern decoupled streaming architecture:
 
 ## Scalability & Performance
 
-### 1. Producer Scaling (Data Sharding) ✅ WORKING
+### 1. Producer Scaling (Data Sharding)
 The producer utilizes **Modulo-Based Data Sharding** to distribute ingestion load.
 
 * **How to Scale**:
