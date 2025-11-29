@@ -8,16 +8,39 @@
 The pipeline follows a modern decoupled streaming architecture:
 
 1.  **Ingestion Layer (Apache Kafka)**:
-    *   **Producer**: Simulates real-time stock ticks by streaming data from a dataset. Scalable to multiple instances.
+    *   **Producer**: Simulates real-time stock ticks by streaming data from a dataset. Scalable to multiple instances using **modulo-based sharding**.
     *   **Broker**: Apache Kafka acts as the central message bus, ensuring durable and reliable data transport.
 
 2.  **Processing Layer (Apache Spark)**:
     *   **Consumer**: A PySpark Structured Streaming application that consumes data from Kafka.
-    *   **Analytics**: Performs real-time transformations and detects price anomalies using threshold-based logic (simulating Z-Score analysis).
+    *   **Analytics**: Performs real-time transformations and detects price anomalies using threshold-based logic.
+        *   **Logic**: Calculates Z-Score ($Z = \frac{Price - Mean}{StdDev}$).
+        *   **Threshold**: Flags anomaly if $|Z| > 3.0$ AND $StdDev > 0.05$.
 
 3.  **Visualization Layer (Streamlit)**:
     *   **Dashboard**: A professional, real-time UI that displays metrics, price trends, and alerts.
     *   **Features**: Interactive Plotly charts (Dark Mode), dynamic watchlists, and auto-refresh capabilities.
+
+## Scalability & Performance
+
+### 1. Producer Scaling (Data Sharding) ✅ WORKING
+The producer utilizes **Modulo-Based Data Sharding** to distribute ingestion load.
+
+* **How to Scale**:
+    ```bash
+    # Scales to 3 instances. The script automatically calculates its index (1, 2, 3) 
+    # and handles only its assigned subset of stocks.
+    TOTAL_PRODUCERS=3 docker compose up -d --build --scale producer=3
+    ```
+* **Mechanism**:
+    1.  The container detects its identity (e.g., `producer-1`, `producer-2`).
+    2.  It filters the dataset: `my_stocks = all_stocks % total_producers`.
+    3.  **Result**: 3 producers run in parallel with **Zero Overlap**, effectively tripling the ingestion throughput without data duplication.
+
+### 2. Anomaly Injection Strategy
+To guarantee demo alerts without manual intervention, the producer is deterministic:
+* **Trigger**: Every **1,000 records** (~3.5 minutes), the producer artificially spikes the price by **500%**.
+* **Detection**: The Consumer's Z-Score model catches this instantly ($|Z| > 3.0$).
 
 ## Prerequisites
 Ensure the following are installed on your system:
@@ -51,32 +74,29 @@ pip install -r requirements.txt
 
 Follow these steps to run the entire platform locally.
 
-### Step 1: Start Infrastructure & Producers
-Launch the Kafka broker, Zookeeper, and the scalable Producer service using Docker Compose.
+### Step 1: Start the Entire Stack
+Launch the Kafka broker, Zookeeper, Producer, and Consumer services using Docker Compose.
 
 ```bash
-docker compose up -d --build --scale producer=3
+docker compose up -d --build
 ```
 
 *   **What happens**:
-    *   Kafka and Zookeeper containers start.
-    *   3 instances of the `producer` service start, streaming stock data to the `test_topic` topic.
-    *   **Anomaly Injection**: By default, producers inject a fake anomaly (5x price spike) every 30 minutes.
+    *   **Infrastructure**: Kafka and Zookeeper start.
+    *   **Producers**: The `producer` service starts streaming data.
+    *   **Consumer**: The `consumer` service starts processing data automatically.
+    *   **Scaling**: You can scale producers dynamically (e.g., `TOTAL_PRODUCERS=3 docker compose up -d --scale producer=3`).
 
-### Step 2: Start the Analytics Engine
-Run the Spark consumer to process the stream. This script reads from Kafka and writes processed data to the file system.
+### Step 2: Monitor the Analytics Engine
+Since the consumer is running inside Docker, you can monitor its progress via logs:
 
 ```bash
-# Ensure you are in the virtual environment
-source venv/bin/activate
-
-# Set environment variables (if not already set globally)
-export JAVA_HOME=/opt/homebrew/opt/openjdk@11  # Adjust path to your Java 11 installation
-export SPARK_LOCAL_IP=127.0.0.1
-
-# Run the consumer
-python consumer.py
+docker logs -f consumer-driver
 ```
+
+*   **Output**:
+    *   Processed data is written to `./outputs/streaming_data/raw_ticks`.
+    *   Detected anomalies are written to `./outputs/anomalies`.
 
 *   **Output**:
     *   Processed data is written to `./outputs/streaming_data/raw_ticks`.
@@ -99,7 +119,7 @@ streamlit run dashboard.py
 
 ### Producer Configuration (`producer.py`)
 *   `SPEED`: Controls the speed of data emission (default: 0.2s).
-*   `ANOMALY_EVERY_SEC`: Frequency of fake anomalies (default: 1800s / 30 mins).
+*   `ANOMALY_EVERY_SEC`: Frequency of fake anomalies (default: 180s / 3 mins).
 *   `ENABLE_FAKE_ANOMALIES`: Toggle to enable/disable anomaly injection.
 
 ### Dashboard Configuration (`dashboard.py`)
@@ -111,6 +131,8 @@ streamlit run dashboard.py
 *   **Kafka Connection Issues**: Ensure Docker containers are running (`docker ps`). If running locally on Mac, ensure `KAFKA_ADVERTISED_LISTENERS` in `docker-compose.yml` points to `127.0.0.1`.
 *   **Java Errors**: PySpark requires Java 8 or 11. Ensure `JAVA_HOME` is correctly set.
 *   **Missing Data**: Check if the `producer` containers are running and if `consumer.py` is successfully writing to the `outputs/` directory.
+*   **Consumer Crashing**: If you see `java.lang.UnsupportedOperationException`, check your Java version. Java 11 is required.
+*   **High CPU Usage**: Spark can be CPU intensive during the initial catch-up phase. This is normal.
 
 ---
 *Built by The Data Alchemist Engineering Team*

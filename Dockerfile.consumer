@@ -1,0 +1,24 @@
+FROM python:3.9-slim-bullseye
+
+WORKDIR /app
+
+# Install Java (required for PySpark) and procps
+RUN apt-get update && \
+    apt-get install -y openjdk-11-jre procps curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# JAVA_HOME will be detected automatically
+# ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+
+# Install Python dependencies
+RUN pip install pyspark==3.5.0 pandas kafka-python pyarrow
+
+# Set SPARK_HOME and PATH for easy access to binaries
+ENV SPARK_HOME=/usr/local/lib/python3.9/site-packages/pyspark
+ENV PATH=$PATH:$SPARK_HOME/bin
+
+# Copy source code
+COPY consumer.py .
+
+# Run the consumer
+CMD ["python", "consumer.py"]

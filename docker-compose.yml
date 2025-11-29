@@ -8,6 +8,8 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    networks:
+      - data-network
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
@@ -23,11 +25,101 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - data-network
+
+  # Init container to create the topic with multiple partitions
+  kafka-setup:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka-setup
+    depends_on:
+      - kafka
+    command: "bash -c 'echo Waiting for Kafka to be ready... && \
+                       cub kafka-ready -b kafka:9092 1 20 && \
+                       kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --partitions 4 --replication-factor 1 --topic test_topic && \
+                       echo Topic created'"
+    networks:
+      - data-network
+
+  spark-master:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    container_name: spark-master
+    command: "/bin/bash -c '/usr/local/lib/python3.9/site-packages/pyspark/bin/spark-class org.apache.spark.deploy.master.Master --ip 0.0.0.0 --port 7077 --webui-port 8080'"
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MODE=master
+    volumes:
+      - ./outputs:/app/outputs
+    networks:
+      - data-network
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    depends_on:
+      - spark-master
+    command: "/bin/bash -c '/usr/local/lib/python3.9/site-packages/pyspark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --webui-port 8081'"
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=1G
+    volumes:
+      - ./outputs:/app/outputs
+    deploy:
+      mode: replicated
+      replicas: 2
+    networks:
+      - data-network
 
   producer:
     build: .
     environment:
-      - KAFKA_BROKER=kafka:9092
-      - PYTHONUNBUFFERED=1
+      KAFKA_BROKER: kafka:9092
+      # TOTAL_PRODUCERS is passed via env var or defaults to 1.
+      # PRODUCER_INDEX is derived from hostname if not set.
+      TOTAL_PRODUCERS: ${TOTAL_PRODUCERS:-1}
+      PYTHONUNBUFFERED: 1
     depends_on:
-      - kafka
+      - kafka-setup
+    networks:
+      - data-network
+    volumes:
+      - ./producer.py:/app/producer.py
+      - ./data:/app/data
+
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    container_name: consumer-driver
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      # Temporarily disabled for stability testing - forcing local[*] mode
+      # - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_DRIVER_HOST=consumer-driver
+      - SPARK_DRIVER_HOST=consumer-driver
+      - SPARK_DRIVER_BIND_ADDRESS=0.0.0.0
+      - PYTHONUNBUFFERED=1
+
+    volumes:
+      - ./outputs:/app/outputs
+      - ./consumer.py:/app/consumer.py
+
+      - ./consumer.py:/app/consumer.py
+    depends_on:
+      - spark-master
+      - spark-worker
+      - kafka-setup
+    command: "python consumer.py"
+    networks:
+      - data-network
+
+networks:
+  data-network:
+    driver: bridge
